@@ -5,7 +5,7 @@
       "homepage": "https://dastishf.github.io/miniapp/",
       "scripts": {
             "dev": "vite",
-            "build": "vite build",
+            "build": "node --max-old-space-size=4096 ./node_modules/vite/bin/vite.js build",
             "preview": "vite preview",
             "predeploy": "npm run build",
             "deploy": "gh-pages -d dist"
