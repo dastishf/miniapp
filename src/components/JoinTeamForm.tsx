@@ -5,6 +5,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { ArrowLeft, Clock, CheckCircle, XCircle } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
+import { findTeamByCode } from "../services/firebaseConfig";
 
 interface JoinRequest {
   id: string;
@@ -27,104 +28,80 @@ export function JoinTeamForm({ onBack, onJoinSuccess }: JoinTeamFormProps) {
   const [employeePhone, setEmployeePhone] = useState('');
   const [request, setRequest] = useState<JoinRequest | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const goToTasks = async () => {
+    if (!request?.teamCode) {
+      alert('Произошла ошибка. Не удалось определить команду.');
+      setStep('form');
+      return;
+    }
+
+    try {
+      const team = await findTeamByCode(request.teamCode);
+      if (team) {
+        localStorage.setItem('currentTeam', JSON.stringify(team));
+        onJoinSuccess();
+      } else {
+        alert('Команда, в которую вас приняли, не найдена. Пожалуйста, попробуйте подать заявку еще раз.');
+        setStep('form');
+        setRequest(null);
+      }
+    } catch (error) {
+      console.error("Ошибка при поиске команды:", error);
+      alert("Произошла ошибка при загрузке данных команды.");
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => { // Добавили async
     e.preventDefault();
     
     if (!teamCode.trim() || !employeeName.trim() || !employeePhone.trim()) return;
 
     const upperCaseCode = teamCode.trim().toUpperCase();
 
-    // Специальный демо-код для разработчиков
+    // --- Блок DEMO24 (оставляем без изменений) ---
     if (upperCaseCode === 'DEMO24') {
-      // Создаем демо-команду
       const demoTeam = {
         id: 'demo-team-id',
         name: 'Демо Команда',
-        description: 'Команда для демонстрации функционала приложения',
-        adminName: 'Администратор Демо',
-        adminPhone: '+7 (999) 000-00-00',
         code: 'DEMO24',
         createdAt: new Date()
       };
-
-      // Сохраняем демо-команду
-      let teams = JSON.parse(localStorage.getItem('teams') || '[]');
-      const existingTeamIndex = teams.findIndex((t: any) => t.code === 'DEMO24');
-      if (existingTeamIndex === -1) {
-        teams.push(demoTeam);
-        localStorage.setItem('teams', JSON.stringify(teams));
-      }
-
-      // Создаем демонстрационные задачи
-      const demoTasks = [
-        {
-          id: 'demo-task-1',
-          title: 'Изучить интерфейс приложения',
-          description: 'Ознакомиться с основными функциями менеджера задач',
-          completed: true,
-          priority: 'high',
-          createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) // 2 дня назад
-        },
-        {
-          id: 'demo-task-2',
-          title: 'Протестировать добавление новых задач',
-          description: 'Попробовать создать несколько задач с разными приоритетами',
-          completed: false,
-          priority: 'medium',
-          createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) // 1 день назад
-        },
-        {
-          id: 'demo-task-3',
-          title: 'Проверить систему фильтрации',
-          description: 'Переключиться между разными видами задач: все, активные, выполненные',
-          completed: false,
-          priority: 'low',
-          createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000) // 3 часа назад
-        }
-      ];
-
-      // Сохраняем демо-задачи
-      const existingTasks = JSON.parse(localStorage.getItem('tasks') || '[]');
-      const hasExistingDemoTasks = existingTasks.some((task: any) => task.id.startsWith('demo-task-'));
-      
-      if (!hasExistingDemoTasks) {
-        const allTasks = [...demoTasks, ...existingTasks];
-        localStorage.setItem('tasks', JSON.stringify(allTasks));
-      }
-
-      // Автоматически сохраняем команду как текущую и присоединяем пользователя
       localStorage.setItem('currentTeam', JSON.stringify(demoTeam));
-      
-      // Сразу переходим к менеджеру задач без подтверждений
       onJoinSuccess();
       return;
     }
+    // --- Конец блока DEMO24 ---
 
-    // Проверяем, существует ли команда с таким кодом
-    const teams = JSON.parse(localStorage.getItem('teams') || '[]');
-    const team = teams.find((t: any) => t.code === upperCaseCode);
-    
-    if (!team) {
-      alert('Команда с таким кодом не найдена');
-      return;
+    try {
+      // 1. Ищем команду в Firebase вместо localStorage
+      const team = await findTeamByCode(upperCaseCode);
+      
+      if (!team) {
+        alert('Команда с таким кодом не найдена в базе данных. Проверьте правильность кода.');
+        return;
+      }
+
+      // 2. Если нашли, создаем объект заявки
+      const newRequest: JoinRequest = {
+        id: crypto.randomUUID(),
+        teamCode: upperCaseCode,
+        employeeName: employeeName.trim(),
+        employeePhone: employeePhone.trim(),
+        status: 'pending',
+        createdAt: new Date()
+      };
+
+      // 3. Сохраняем заявку локально (чтобы видеть статус "Ожидание")
+      const requests = JSON.parse(localStorage.getItem('joinRequests') || '[]');
+      requests.push(newRequest);
+      localStorage.setItem('joinRequests', JSON.stringify(requests));
+
+      setRequest(newRequest);
+      setStep('pending');
+    } catch (err) {
+      console.error("Ошибка Firebase:", err);
+      alert("Не удалось связаться с сервером");
     }
-
-    const newRequest: JoinRequest = {
-      id: crypto.randomUUID(),
-      teamCode: upperCaseCode,
-      employeeName: employeeName.trim(),
-      employeePhone: employeePhone.trim(),
-      status: 'pending',
-      createdAt: new Date()
-    };
-
-    // Сохраняем заявку в localStorage
-    const requests = JSON.parse(localStorage.getItem('joinRequests') || '[]');
-    requests.push(newRequest);
-    localStorage.setItem('joinRequests', JSON.stringify(requests));
-
-    setRequest(newRequest);
-    setStep('pending');
   };
 
   const checkRequestStatus = () => {
@@ -137,9 +114,7 @@ export function JoinTeamForm({ onBack, onJoinSuccess }: JoinTeamFormProps) {
       setRequest(updatedRequest);
       
       if (updatedRequest.status === 'approved') {
-        setTimeout(() => {
-          onJoinSuccess();
-        }, 2000);
+        setTimeout(goToTasks, 2000);
       }
     }
   };
@@ -200,9 +175,7 @@ export function JoinTeamForm({ onBack, onJoinSuccess }: JoinTeamFormProps) {
               )}
 
               {request.status === 'approved' && (
-                <Button onClick={onJoinSuccess} className="w-full">
-                  Перейти к задачам
-                </Button>
+                <Button onClick={goToTasks}>Перейти к задачам</Button>
               )}
 
               {request.status === 'rejected' && (

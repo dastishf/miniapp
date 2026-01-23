@@ -1,171 +1,119 @@
-import { useState, useEffect } from "react";
-import { Button } from "./ui/button";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { CheckCircle, XCircle, Clock, Users, Copy, Check } from "lucide-react";
+import { Badge } from "./ui/badge";
+import { CheckCircle, XCircle, Clock, Copy, Check } from "lucide-react";
 
 interface JoinRequest {
   id: string;
   teamCode: string;
   employeeName: string;
   employeePhone: string;
-  status: 'pending' | 'approved' | 'rejected';
-  createdAt: Date;
-}
-
-interface Team {
-  id: string;
-  name: string;
-  description: string;
-  adminName: string;
-  adminPhone: string;
-  code: string;
-  createdAt: Date;
+  status: "pending" | "approved" | "rejected";
+  createdAt: number;
 }
 
 interface TeamManagementProps {
-  team: Team;
+  teamCode: string;
 }
 
-export function TeamManagement({ team }: TeamManagementProps) {
+export function TeamManagement({ teamCode }: TeamManagementProps) {
   const [requests, setRequests] = useState<JoinRequest[]>([]);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     loadRequests();
-  }, [team.code]);
+  }, [teamCode]);
 
   const loadRequests = () => {
-    const allRequests = JSON.parse(localStorage.getItem('joinRequests') || '[]');
-    const teamRequests = allRequests
-      .filter((req: JoinRequest) => req.teamCode === team.code)
-      .map((req: any) => ({
-        ...req,
-        createdAt: new Date(req.createdAt)
-      }))
-      .sort((a: JoinRequest, b: JoinRequest) => b.createdAt.getTime() - a.createdAt.getTime());
-    
-    setRequests(teamRequests);
+    const all = JSON.parse(localStorage.getItem("joinRequests") || "[]");
+
+    const filtered = all
+      .filter((r: JoinRequest) => r.teamCode === teamCode)
+      .sort((a: JoinRequest, b: JoinRequest) => b.createdAt - a.createdAt);
+
+    setRequests(filtered);
   };
 
-  const handleRequest = (requestId: string, status: 'approved' | 'rejected') => {
-    const allRequests = JSON.parse(localStorage.getItem('joinRequests') || '[]');
-    const updatedRequests = allRequests.map((req: JoinRequest) => 
-      req.id === requestId ? { ...req, status } : req
+  const handleRequest = (id: string, status: "approved" | "rejected") => {
+    const all = JSON.parse(localStorage.getItem("joinRequests") || "[]");
+
+    const updated = all.map((r: JoinRequest) =>
+      r.id === id ? { ...r, status } : r
     );
-    
-    localStorage.setItem('joinRequests', JSON.stringify(updatedRequests));
+
+    localStorage.setItem("joinRequests", JSON.stringify(updated));
     loadRequests();
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(team.code);
+  const copyCode = () => {
+    navigator.clipboard.writeText(teamCode);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 1500);
   };
 
-  const pendingRequests = requests.filter(req => req.status === 'pending');
-  const approvedRequests = requests.filter(req => req.status === 'approved');
-  const rejectedRequests = requests.filter(req => req.status === 'rejected');
+  const pending = requests.filter(r => r.status === "pending");
+  const approved = requests.filter(r => r.status === "approved");
+  const rejected = requests.filter(r => r.status === "rejected");
 
   return (
     <div className="space-y-6">
-      {/* Team Info */}
+      {/* TEAM INFO */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Информация о команде
-          </CardTitle>
+          <CardTitle>Команда</CardTitle>
+          <CardDescription>Код команды</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <h3 className="font-medium">{team.name}</h3>
-            {team.description && (
-              <p className="text-sm text-muted-foreground mt-1">{team.description}</p>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-sm">Код команды:</span>
-            <code className="bg-muted px-2 py-1 rounded text-sm font-mono">
-              {team.code}
-            </code>
-            <Button size="sm" variant="outline" onClick={copyToClipboard}>
-              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-            </Button>
-          </div>
-          
-          <div className="text-sm text-muted-foreground">
-            <p>Администратор: {team.adminName}</p>
-            <p>Телефон: {team.adminPhone}</p>
-          </div>
+        <CardContent className="flex items-center gap-2">
+          <code className="text-xl font-mono bg-muted px-3 py-2 rounded">
+            {teamCode}
+          </code>
+          <Button size="icon" variant="outline" onClick={copyCode}>
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          </Button>
         </CardContent>
       </Card>
 
-      {/* Requests Management */}
+      {/* REQUESTS */}
       <Card>
         <CardHeader>
-          <CardTitle>Управление заявками</CardTitle>
-          <CardDescription>
-            Просматривайте и управляйте заявками на присоединение к команде
-          </CardDescription>
+          <CardTitle>Заявки на вступление</CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="pending" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="pending">
-                Ожидающие ({pendingRequests.length})
-              </TabsTrigger>
-              <TabsTrigger value="approved">
-                Одобренные ({approvedRequests.length})
-              </TabsTrigger>
-              <TabsTrigger value="rejected">
-                Отклоненные ({rejectedRequests.length})
-              </TabsTrigger>
+          <Tabs defaultValue="pending">
+            <TabsList className="grid grid-cols-3 w-full">
+              <TabsTrigger value="pending">Ожидают ({pending.length})</TabsTrigger>
+              <TabsTrigger value="approved">Приняты ({approved.length})</TabsTrigger>
+              <TabsTrigger value="rejected">Отклонены ({rejected.length})</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="pending" className="space-y-3">
-              {pendingRequests.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  Нет ожидающих заявок
+            <TabsContent value="pending">
+              {pending.length === 0 ? (
+                <p className="text-center text-muted-foreground py-6">
+                  Нет заявок
                 </p>
               ) : (
-                pendingRequests.map((request) => (
-                  <Card key={request.id} className="border-orange-200">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-orange-500" />
-                            <span className="font-medium">{request.employeeName}</span>
-                            <Badge variant="secondary">Ожидает</Badge>
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            <p>Телефон: {request.employeePhone}</p>
-                            <p>Подано: {request.createdAt.toLocaleDateString()}</p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleRequest(request.id, 'approved')}
-                            className="h-8"
-                          >
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Одобрить
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleRequest(request.id, 'rejected')}
-                            className="h-8"
-                          >
-                            <XCircle className="h-3 w-3 mr-1" />
-                            Отклонить
-                          </Button>
-                        </div>
+                pending.map(r => (
+                  <Card key={r.id} className="mb-3">
+                    <CardContent className="p-4 flex justify-between">
+                      <div>
+                        <p className="font-medium">{r.employeeName}</p>
+                        <p className="text-sm text-muted-foreground">{r.employeePhone}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => handleRequest(r.id, "approved")}>
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Принять
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleRequest(r.id, "rejected")}
+                        >
+                          <XCircle className="h-4 w-4 mr-1" />
+                          Отклонить
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -173,52 +121,20 @@ export function TeamManagement({ team }: TeamManagementProps) {
               )}
             </TabsContent>
 
-            <TabsContent value="approved" className="space-y-3">
-              {approvedRequests.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  Нет одобренных заявок
-                </p>
-              ) : (
-                approvedRequests.map((request) => (
-                  <Card key={request.id} className="border-green-200">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                        <span className="font-medium">{request.employeeName}</span>
-                        <Badge className="bg-green-100 text-green-700">Одобрено</Badge>
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-2">
-                        <p>Телефон: {request.employeePhone}</p>
-                        <p>Одобрено: {request.createdAt.toLocaleDateString()}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
+            <TabsContent value="approved">
+              {approved.map(r => (
+                <Badge key={r.id} className="block mb-2">
+                  {r.employeeName}
+                </Badge>
+              ))}
             </TabsContent>
 
-            <TabsContent value="rejected" className="space-y-3">
-              {rejectedRequests.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  Нет отклоненных заявок
-                </p>
-              ) : (
-                rejectedRequests.map((request) => (
-                  <Card key={request.id} className="border-red-200">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2">
-                        <XCircle className="h-4 w-4 text-red-500" />
-                        <span className="font-medium">{request.employeeName}</span>
-                        <Badge variant="destructive">Отклонено</Badge>
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-2">
-                        <p>Телефон: {request.employeePhone}</p>
-                        <p>Отклонено: {request.createdAt.toLocaleDateString()}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
+            <TabsContent value="rejected">
+              {rejected.map(r => (
+                <Badge key={r.id} variant="destructive" className="block mb-2">
+                  {r.employeeName}
+                </Badge>
+              ))}
             </TabsContent>
           </Tabs>
         </CardContent>

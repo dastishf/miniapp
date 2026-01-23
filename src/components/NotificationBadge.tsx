@@ -36,3 +36,4 @@ export function NotificationBadge({ teamCode, className = "" }: NotificationBadg
     </Badge>
   );
 }
+
