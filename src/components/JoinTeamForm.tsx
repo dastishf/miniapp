@@ -1,4 +1,7 @@
 import { useState } from "react";
+// Добавьте импорт addDoc и collection
+import { collection, addDoc, doc, getDoc } from "firebase/firestore";
+import { db } from "../services/firebaseConfig";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
@@ -13,7 +16,7 @@ interface JoinRequest {
   employeeName: string;
   employeePhone: string;
   status: 'pending' | 'approved' | 'rejected';
-  createdAt: Date;
+  createdAt: number; // Changed from Date for Firebase compatibility
 }
 
 interface JoinTeamFormProps {
@@ -28,15 +31,15 @@ export function JoinTeamForm({ onBack, onJoinSuccess }: JoinTeamFormProps) {
   const [employeePhone, setEmployeePhone] = useState('');
   const [request, setRequest] = useState<JoinRequest | null>(null);
 
-  const goToTasks = async () => {
-    if (!request?.teamCode) {
+  const goToTasks = async (teamCodeValue: string) => {
+    if (!teamCodeValue) {
       alert('Произошла ошибка. Не удалось определить команду.');
       setStep('form');
       return;
     }
 
     try {
-      const team = await findTeamByCode(request.teamCode);
+      const team = await findTeamByCode(teamCodeValue);
       if (team) {
         localStorage.setItem('currentTeam', JSON.stringify(team));
         onJoinSuccess();
@@ -51,14 +54,13 @@ export function JoinTeamForm({ onBack, onJoinSuccess }: JoinTeamFormProps) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => { // Добавили async
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!teamCode.trim() || !employeeName.trim() || !employeePhone.trim()) return;
 
     const upperCaseCode = teamCode.trim().toUpperCase();
 
-    // --- Блок DEMO24 (оставляем без изменений) ---
     if (upperCaseCode === 'DEMO24') {
       const demoTeam = {
         id: 'demo-team-id',
@@ -70,10 +72,8 @@ export function JoinTeamForm({ onBack, onJoinSuccess }: JoinTeamFormProps) {
       onJoinSuccess();
       return;
     }
-    // --- Конец блока DEMO24 ---
 
     try {
-      // 1. Ищем команду в Firebase вместо localStorage
       const team = await findTeamByCode(upperCaseCode);
       
       if (!team) {
@@ -81,22 +81,17 @@ export function JoinTeamForm({ onBack, onJoinSuccess }: JoinTeamFormProps) {
         return;
       }
 
-      // 2. Если нашли, создаем объект заявки
-      const newRequest: JoinRequest = {
-        id: crypto.randomUUID(),
+      const newRequest = {
         teamCode: upperCaseCode,
         employeeName: employeeName.trim(),
         employeePhone: employeePhone.trim(),
-        status: 'pending',
-        createdAt: new Date()
+        status: 'pending' as const,
+        createdAt: Date.now()
       };
 
-      // 3. Сохраняем заявку локально (чтобы видеть статус "Ожидание")
-      const requests = JSON.parse(localStorage.getItem('joinRequests') || '[]');
-      requests.push(newRequest);
-      localStorage.setItem('joinRequests', JSON.stringify(requests));
+      const docRef = await addDoc(collection(db, "joinRequests"), newRequest);
 
-      setRequest(newRequest);
+      setRequest({ ...newRequest, id: docRef.id });
       setStep('pending');
     } catch (err) {
       console.error("Ошибка Firebase:", err);
@@ -104,18 +99,36 @@ export function JoinTeamForm({ onBack, onJoinSuccess }: JoinTeamFormProps) {
     }
   };
 
-  const checkRequestStatus = () => {
-    if (!request) return;
+  const checkRequestStatus = async () => {
+    if (!request || !request.id || request.id === 'temp') return;
     
-    const requests = JSON.parse(localStorage.getItem('joinRequests') || '[]');
-    const updatedRequest = requests.find((r: JoinRequest) => r.id === request.id);
-    
-    if (updatedRequest && updatedRequest.status !== request.status) {
-      setRequest(updatedRequest);
+    try {
+      // Тянем свежие данные напрямую из Firebase по ID заявки
+      const requestRef = doc(db, "joinRequests", request.id);
+      const docSnap = await getDoc(requestRef);
       
-      if (updatedRequest.status === 'approved') {
-        setTimeout(goToTasks, 2000);
+      if (docSnap.exists()) {
+        const data = { id: docSnap.id, ...docSnap.data() } as JoinRequest;
+        
+        // Если статус в базе изменился (например, стал 'approved')
+        if (data.status !== request.status) {
+          setRequest(data); // Обновляем состояние экрана
+          
+          if (data.status === 'approved') {
+            // Если одобрили — через 2 секунды пускаем в приложение
+            setTimeout(() => goToTasks(data.teamCode), 2000);
+          }
+        } else {
+          alert("Статус пока не изменился. Ожидайте решения администратора.");
+        }
+      } else {
+        alert("Не удалось найти вашу заявку. Возможно, она была удалена.");
+        setStep('form');
+        setRequest(null);
       }
+    } catch (error) {
+      console.error("Ошибка при проверке статуса:", error);
+      alert("Произошла ошибка при проверке статуса.");
     }
   };
 
@@ -175,7 +188,7 @@ export function JoinTeamForm({ onBack, onJoinSuccess }: JoinTeamFormProps) {
               )}
 
               {request.status === 'approved' && (
-                <Button onClick={goToTasks}>Перейти к задачам</Button>
+                <Button onClick={() => goToTasks(request.teamCode)}>Перейти к задачам</Button>
               )}
 
               {request.status === 'rejected' && (

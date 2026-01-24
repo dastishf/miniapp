@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { db } from "../services/firebaseConfig";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
@@ -22,29 +24,34 @@ export function TeamManagement({ teamCode }: TeamManagementProps) {
   const [requests, setRequests] = useState<JoinRequest[]>([]);
   const [copied, setCopied] = useState(false);
 
+  // ... внутри компонента TeamManagement ...
+
   useEffect(() => {
-    loadRequests();
-  }, [teamCode]);
+    if (!teamCode) return;
 
-  const loadRequests = () => {
-    const all = JSON.parse(localStorage.getItem("joinRequests") || "[]");
-
-    const filtered = all
-      .filter((r: JoinRequest) => r.teamCode === teamCode)
-      .sort((a: JoinRequest, b: JoinRequest) => b.createdAt - a.createdAt);
-
-    setRequests(filtered);
-  };
-
-  const handleRequest = (id: string, status: "approved" | "rejected") => {
-    const all = JSON.parse(localStorage.getItem("joinRequests") || "[]");
-
-    const updated = all.map((r: JoinRequest) =>
-      r.id === id ? { ...r, status } : r
+    // Создаем запрос к коллекции joinRequests
+    const q = query(
+      collection(db, "joinRequests"),
+      where("teamCode", "==", teamCode)
     );
 
-    localStorage.setItem("joinRequests", JSON.stringify(updated));
-    loadRequests();
+    // onSnapshot позволяет получать обновления в реальном времени без перезагрузки!
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedRequests = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as JoinRequest[];
+      
+      // Сортируем по дате создания
+      setRequests(fetchedRequests.sort((a, b) => b.createdAt - a.createdAt));
+    });
+
+    return () => unsubscribe(); // Отписываемся при закрытии вкладки
+  }, [teamCode]);
+
+  const handleRequest = async (id: string, status: "approved" | "rejected") => {
+    const requestRef = doc(db, "joinRequests", id);
+    await updateDoc(requestRef, { status });
   };
 
   const copyCode = () => {
