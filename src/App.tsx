@@ -97,64 +97,39 @@ export default function App() {
 
   // ---------- ЛОГИКА GOOGLE CALENDAR ----------
   const handleConnectGoogle = () => {
-    const startAuth = () => {
-      if (!window.google || !window.google.accounts) {
-        alert("Ошибка: API Google недоступно. Отключите AdBlock или обновите страницу.");
-        return;
-      }
-
-      // Проверяем мобильный Телеграм
-      const isTelegramMobile = window.Telegram?.WebApp && 
-        (window.Telegram.WebApp.platform === 'android' || window.Telegram.WebApp.platform === 'ios');
-
-      if (isTelegramMobile) {
-        // Умный обход WebView: генерируем прямую oAuth-ссылку для внешнего браузера
-        const redirectUri = "https://miniapp-fawn-omega.vercel.app";
-        const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-        const scope = encodeURIComponent('https://www.googleapis.com/auth/calendar.events');
-        
-        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}`;
-        
-        // Открываем внешку через Telegram API
-        window.Telegram.WebApp.openLink(authUrl);
-        return;
-      }
-
-      // Если десктоп или ПК — запускаем стандартный привычный Popup
-      const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/calendar.events',
-        callback: (response: any) => {
-          if (response.access_token) {
-            setGoogleToken(response.access_token);
-            localStorage.setItem("google_access_token", response.access_token);
-            alert("Google Календарь успешно подключен!");
-          }
-        },
-      });
-      client.requestAccessToken();
-    };
-
     if (!window.google || !window.google.accounts) {
-      console.log("⏳ Загружаем скрипт Google Identity Services...");
-      const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
-      if (existingScript) {
-        startAuth();
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.onload = () => {
-        setTimeout(startAuth, 100);
-      };
-      script.onerror = () => alert("Не удалось загрузить скрипт Google.");
-      document.head.appendChild(script);
-    } else {
-      startAuth();
+      alert("Интерфейс Google еще загружается, подождите пару секунд и повторите попытку.");
+      return;
     }
+
+    // Проверяем мобильный Телеграм
+    const isTelegramMobile = window.Telegram?.WebApp && 
+      (window.Telegram.WebApp.platform === 'android' || window.Telegram.WebApp.platform === 'ios');
+
+    if (isTelegramMobile) {
+      const redirectUri = "https://miniapp-fawn-omega.vercel.app";
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      const scope = encodeURIComponent('https://www.googleapis.com/auth/calendar.events');
+      
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}`;
+      
+      window.Telegram.WebApp.openLink(authUrl);
+      return;
+    }
+
+    // Для ПК / Десктопа
+    const client = window.google.accounts.oauth2.initTokenClient({
+      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/calendar.events',
+      callback: (response: any) => {
+        if (response.access_token) {
+          setGoogleToken(response.access_token);
+          localStorage.setItem("google_access_token", response.access_token);
+          alert("Google Календарь успешно подключен!");
+        }
+      },
+    });
+    client.requestAccessToken();
   };
 
   const addToGoogleCalendar = async (title: string, description: string, dueDate: string, token: string) => {
@@ -193,6 +168,14 @@ export default function App() {
   }, [currentTeam]);
 
   useEffect(() => {
+    // ПРИНУДИТЕЛЬНАЯ ФОНОВАЯ ЗАГРУЗКА GOOGLE API ПРИ СТАРТЕ
+    if (!window.google || !window.google.accounts) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
     const savedTeam = localStorage.getItem("currentTeam");
     if (savedTeam) {
       try {
