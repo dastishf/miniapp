@@ -21,10 +21,16 @@ import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Trash2, Settings } from "lucide-react";
 
-// Расширяем глобальное окно для работы с Google API
+// Расширяем глобальное окно для работы с Google API и Telegram WebApp
 declare global {
   interface Window {
     google: any;
+    Telegram?: {
+      WebApp: {
+        platform: string;
+        openLink: (url: string) => void;
+      };
+    };
   }
 }
 
@@ -39,7 +45,7 @@ interface Task {
   assignedTo?: string | null;
   createdBy?: string | null;
   teamId?: string | null;
-  dueDate?: string | null; // Добавили поле дедлайна в интерфейс
+  dueDate?: string | null;
 }
 
 interface TeamMember {
@@ -74,6 +80,21 @@ export default function App() {
   // Стейт для хранения токена Google авторизации
   const [googleToken, setGoogleToken] = useState<string | null>(() => localStorage.getItem("google_access_token"));
 
+  // ---------- ЛОГИКА ПОДХВАТА ТОКЕНА ИЗ URL (ДЛЯ МОБИЛОК) ----------
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash) {
+      const params = new URLSearchParams(hash.substring(1));
+      const accessToken = params.get("access_token");
+      if (accessToken) {
+        setGoogleToken(accessToken);
+        localStorage.setItem("google_access_token", accessToken);
+        window.location.hash = ""; // Чистим строку адреса
+        alert("Google Календарь успешно подключен!");
+      }
+    }
+  }, []);
+
   // ---------- ЛОГИКА GOOGLE CALENDAR ----------
   const handleConnectGoogle = () => {
     const startAuth = () => {
@@ -82,6 +103,24 @@ export default function App() {
         return;
       }
 
+      // Проверяем мобильный Телеграм
+      const isTelegramMobile = window.Telegram?.WebApp && 
+        (window.Telegram.WebApp.platform === 'android' || window.Telegram.WebApp.platform === 'ios');
+
+      if (isTelegramMobile) {
+        // Умный обход WebView: генерируем прямую oAuth-ссылку для внешнего браузера
+        const redirectUri = "https://miniapp-fawn-omega.vercel.app";
+        const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+        const scope = encodeURIComponent('https://www.googleapis.com/auth/calendar.events');
+        
+        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}`;
+        
+        // Открываем внешку через Telegram API
+        window.Telegram.WebApp.openLink(authUrl);
+        return;
+      }
+
+      // Если десктоп или ПК — запускаем стандартный привычный Popup
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/calendar.events',
@@ -452,7 +491,7 @@ export default function App() {
           <h1 className="text-xl font-bold">Менеджер Задач</h1>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            {/* НАША НОВАЯ КНОПКА ИНТЕГРАЦИИ GOOGLE */}
+            {/* КНОПКА ИНТЕГРАЦИИ GOOGLE С ПОДДЕРЖКОЙ MOBILE / DESKTOP */}
             <Button 
               variant={googleToken ? "secondary" : "outline"} 
               onClick={handleConnectGoogle}
