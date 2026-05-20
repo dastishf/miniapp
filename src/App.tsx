@@ -257,6 +257,37 @@ export default function App() {
 
   // ---------- TASK ACTIONS ----------
   const addTask = async (taskData: Omit<Task, "id" | "completed" | "createdAt">) => {
+    // ВЫВОДИМ ВСЁ НА ЭКРАН ПРИНУДИТЕЛЬНО
+    alert(`Клик по кнопке! Токен есть: ${!!googleToken}. Дедлайн пришел: "${taskData.dueDate}"`);
+
+    if (currentTeam) {
+      try {
+        await fbCreateTask({
+          ...taskData,
+          completed: false,
+          archived: false,
+          teamId: currentTeam.id,
+          createdAt: Date.now(),
+        });
+      } catch (e) {
+        console.error("Error creating task in Firebase:", e);
+      }
+    } else {
+      const newTask: Task = {
+        id: crypto.randomUUID(),
+        completed: false,
+        createdAt: new Date(),
+        archived: false,
+        ...taskData,
+      };
+      setTasks((prev) => [newTask, ...prev]);
+    }
+
+    // Если у созданной задачи есть дедлайн и подключен Google — шлем событие
+    if (taskData.dueDate && googleToken) {
+      await addToGoogleCalendar(taskData.title, taskData.description || '', taskData.dueDate, googleToken);
+    }
+  };
     if (currentTeam) {
       try {
         await fbCreateTask({
