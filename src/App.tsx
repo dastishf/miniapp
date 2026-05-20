@@ -21,6 +21,13 @@ import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Trash2, Settings } from "lucide-react";
 
+// Расширяем глобальное окно для работы с Google API
+declare global {
+  interface Window {
+    google: any;
+  }
+}
+
 interface Task {
   id: string;
   title: string;
@@ -32,6 +39,7 @@ interface Task {
   assignedTo?: string | null;
   createdBy?: string | null;
   teamId?: string | null;
+  dueDate?: string | null; // Добавили поле дедлайна в интерфейс
 }
 
 interface TeamMember {
@@ -61,30 +69,103 @@ export default function App() {
 
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [activeTab, setActiveTab] = useState<"tasks" | "archive" | "management">(
-    "tasks"
-  );
+  const [activeTab, setActiveTab] = useState<"tasks" | "archive" | "management">("tasks");
+
+  // Стейт для хранения токена Google авторизации
+  const [googleToken, setGoogleToken] = useState<string | null>(() => localStorage.getItem("google_access_token"));
+
+  // ---------- ЛОГИКА GOOGLE CALENDAR ----------
+  const handleConnectGoogle = () => {
+    const startAuth = () => {
+      if (!window.google || !window.google.accounts) {
+        alert("Ошибка: API Google недоступно. Отключите AdBlock или обновите страницу.");
+        return;
+      }
+
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/calendar.events',
+        callback: (response: any) => {
+          if (response.access_token) {
+            setGoogleToken(response.access_token);
+            localStorage.setItem("google_access_token", response.access_token);
+            alert("Google Календарь успешно подключен!");
+          }
+        },
+      });
+      client.requestAccessToken();
+    };
+
+    if (!window.google || !window.google.accounts) {
+      console.log("⏳ Загружаем скрипт Google Identity Services...");
+      const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      if (existingScript) {
+        startAuth();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        setTimeout(startAuth, 100);
+      };
+      script.onerror = () => alert("Не удалось загрузить скрипт Google.");
+      document.head.appendChild(script);
+    } else {
+      startAuth();
+    }
+  };
+
+  const addToGoogleCalendar = async (title: string, description: string, dueDate: string, token: string) => {
+    const event = {
+      summary: title,
+      description: description || 'Создано через Atrium Task',
+      start: { date: dueDate },
+      end: { date: dueDate },
+    };
+
+    try {
+      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(event),
+      });
+
+      if (response.status === 401) {
+        console.warn("Срок действия токена Google истек.");
+        setGoogleToken(null);
+        localStorage.removeItem("google_access_token");
+      } else if (response.ok) {
+        console.log("🚀 Задача успешно улетела в Google Календарь!");
+      }
+    } catch (error) {
+      console.error("Ошибка интеграции с Google Календарем:", error);
+    }
+  };
 
   // ---------- INITIAL LOAD ----------
   useEffect(() => {
-  console.log("currentTeam:", currentTeam);
-}, [currentTeam]);
+    console.log("currentTeam:", currentTeam);
+  }, [currentTeam]);
 
   useEffect(() => {
-    // Load team info from localStorage (if user joined/created a team earlier)
     const savedTeam = localStorage.getItem("currentTeam");
     if (savedTeam) {
       try {
         const parsedTeam = JSON.parse(savedTeam);
         setCurrentTeam(parsedTeam);
         setMode("task-manager");
-        return; // if team exists, we will subscribe to Firebase in the next effect
+        return;
       } catch (e) {
         console.error("Error parsing saved team:", e);
       }
     }
 
-    // If no team — load local tasks & archive from localStorage
     const savedTasks = localStorage.getItem("tasks");
     if (savedTasks) {
       try {
@@ -116,12 +197,9 @@ export default function App() {
 
   // ---------- FIREBASE SUBSCRIPTION WHEN TEAM SELECTED ----------
   useEffect(() => {
-    // If user is in a team -> subscribe to Firestore tasks for that team
     if (!currentTeam) return;
 
-    // subscribeToTasks returns an unsubscribe function
     const unsubscribe = subscribeToTasks(currentTeam.id, (firebaseTasks) => {
-      // separate archived vs active
       const active = firebaseTasks
         .filter((t) => !t.archived)
         .map((t) => ({ ...t, createdAt: new Date(t.createdAt) }));
@@ -144,7 +222,7 @@ export default function App() {
 
   // ---------- LOCAL STORAGE SYNCS (only when NOT in team) ----------
   useEffect(() => {
-    if (currentTeam) return; // don't touch localStorage in team mode
+    if (currentTeam) return;
     localStorage.setItem("tasks", JSON.stringify(tasks));
   }, [tasks, currentTeam]);
 
@@ -153,11 +231,9 @@ export default function App() {
     localStorage.setItem("archivedTasks", JSON.stringify(archivedTasks));
   }, [archivedTasks, currentTeam]);
 
-  // ---------- TASK ACTIONS (handle both local & team modes) ----------
-  // addTask: if in team -> create in Firebase, else local
+  // ---------- TASK ACTIONS ----------
   const addTask = async (taskData: Omit<Task, "id" | "completed" | "createdAt">) => {
     if (currentTeam) {
-      // Team mode -> store in Firebase (subscribe will update local state)
       try {
         await fbCreateTask({
           ...taskData,
@@ -170,7 +246,6 @@ export default function App() {
         console.error("Error creating task in Firebase:", e);
       }
     } else {
-      // Local mode -> localStorage
       const newTask: Task = {
         id: crypto.randomUUID(),
         completed: false,
@@ -180,11 +255,14 @@ export default function App() {
       };
       setTasks((prev) => [newTask, ...prev]);
     }
+
+    // Если у созданной задачи есть дедлайн и подключен Google — шлем событие
+    if (taskData.dueDate && googleToken) {
+      await addToGoogleCalendar(taskData.title, taskData.description || '', taskData.dueDate, googleToken);
+    }
   };
 
-  // toggle complete by id
   const toggleTaskComplete = async (id: string) => {
-    // find in current arrays (prefer tasks state)
     const t = tasks.find((x) => x.id === id) || archivedTasks.find((x) => x.id === id);
     if (!t) return;
 
@@ -199,7 +277,6 @@ export default function App() {
     }
   };
 
-  // archive (soft delete)
   const archiveTask = async (id: string) => {
     const t = tasks.find((x) => x.id === id);
     if (!t) return;
@@ -216,7 +293,6 @@ export default function App() {
     }
   };
 
-  // restore from archive
   const restoreTask = async (id: string) => {
     const t = archivedTasks.find((x) => x.id === id);
     if (!t) return;
@@ -233,7 +309,6 @@ export default function App() {
     }
   };
 
-  // permanently delete archived task (used in Archive UI)
   const deleteArchivedPermanently = async (id: string) => {
     if (currentTeam) {
       try {
@@ -246,12 +321,8 @@ export default function App() {
     }
   };
 
-  // clear completed (only affects active tasks)
   const clearCompleted = async () => {
     if (currentTeam) {
-      // In team mode: mark completed tasks as whatever desired.
-      // We will simply set completed=false? No — original cleared completed removes them.
-      // For consistency with previous UI: remove completed tasks (archive them).
       const toArchive = tasks.filter((t) => t.completed);
       for (const t of toArchive) {
         try {
@@ -265,7 +336,6 @@ export default function App() {
     }
   };
 
-  // clear entire archive
   const clearArchive = async () => {
     if (currentTeam) {
       for (const t of archivedTasks) {
@@ -280,7 +350,6 @@ export default function App() {
     }
   };
 
-  // update task (edit)
   const handleUpdateTask = async (updatedTask: Task) => {
     if (currentTeam) {
       try {
@@ -288,7 +357,7 @@ export default function App() {
           title: updatedTask.title,
           description: updatedTask.description,
           priority: updatedTask.priority,
-          // other fields as needed
+          dueDate: updatedTask.dueDate,
         });
       } catch (e) {
         console.error("Error updating task in Firebase:", e);
@@ -299,7 +368,6 @@ export default function App() {
     }
   };
 
-  // delete task permanently (not used on UI except archive delete)
   const handleDeletePermanent = async (id: string) => {
     if (currentTeam) {
       try {
@@ -313,12 +381,10 @@ export default function App() {
     }
   };
 
-  // Logout / leave team
   const handleLogout = () => {
     localStorage.removeItem("currentTeam");
     setCurrentTeam(null);
     setMode("team-selection");
-    // keep local tasks intact
   };
 
   // ---------- Filtering ----------
@@ -357,40 +423,43 @@ export default function App() {
     );
   }
 
-  // Найдите секцию // ---------- UI MODES ---------- в App.tsx
-if (mode === "join-team") {
-  return (
-    <JoinTeamForm
-      onBack={() => setMode("team-selection")}
-      onJoinSuccess={(teamData) => {
-        // Проверка: если teamData не похож на объект команды (например, это событие)
-        // то мы ничего не делаем или берем данные из стейта/базы
-        if (teamData && typeof teamData === 'object' && 'id' in teamData) {
-          setCurrentTeam(teamData);
-          localStorage.setItem("currentTeam", JSON.stringify(teamData));
-          setMode("task-manager");
-        } else {
-          // Если данных нет, просто перезагружаем страницу или стейт, 
-          // так как команда уже должна быть в localStorage внутри JoinTeamForm
-          const saved = localStorage.getItem("currentTeam");
-          if (saved) {
-             setCurrentTeam(JSON.parse(saved));
-             setMode("task-manager");
+  if (mode === "join-team") {
+    return (
+      <JoinTeamForm
+        onBack={() => setMode("team-selection")}
+        onJoinSuccess={(teamData) => {
+          if (teamData && typeof teamData === 'object' && 'id' in teamData) {
+            setCurrentTeam(teamData);
+            localStorage.setItem("currentTeam", JSON.stringify(teamData));
+            setMode("task-manager");
+          } else {
+            const saved = localStorage.getItem("currentTeam");
+            if (saved) {
+              setCurrentTeam(JSON.parse(saved));
+              setMode("task-manager");
+            }
           }
-        }
-      }}
-    />
-  );
-}
+        }}
+      />
+    );
+  }
 
   // ---------- RENDER ----------
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-md mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-6">
-          <h1>Менеджер Задач</h1>
+          <h1 className="text-xl font-bold">Менеджер Задач</h1>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            {/* НАША НОВАЯ КНОПКА ИНТЕГРАЦИИ GOOGLE */}
+            <Button 
+              variant={googleToken ? "secondary" : "outline"} 
+              onClick={handleConnectGoogle}
+              className={googleToken ? "text-green-600 border-green-200 dark:text-green-400 dark:border-green-900" : ""}
+            >
+              {googleToken ? "📅 Подключен" : "📅 Google"}
+            </Button>
             <Button variant="ghost" onClick={handleLogout}>
               Выйти
             </Button>
@@ -494,7 +563,7 @@ if (mode === "join-team") {
             {currentTeam && <TeamManagement teamCode={currentTeam.code} />}
             {!currentTeam && (
               <div className="text-center py-6">
-                <p className="text-muted-foreground">Вы не в команде — управление недоступно</p>
+                <p className="text-muted-foreground mb-4">Вы не в команде — управление недоступно</p>
                 <Button onClick={() => setMode("team-selection")}>Присоединиться</Button>
               </div>
             )}

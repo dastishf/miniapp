@@ -13,6 +13,7 @@ interface Task {
   completed: boolean;
   priority: 'low' | 'medium' | 'high';
   createdAt: Date;
+  dueDate?: string | null; // Добавили поле для дедлайна
 }
 
 interface AddTaskFormProps {
@@ -27,6 +28,7 @@ export function AddTaskForm({ onAddTask, editingTask, onUpdateTask, onCancelEdit
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [dueDate, setDueDate] = useState(''); // Стейт для дедлайна
   
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -36,6 +38,7 @@ export function AddTaskForm({ onAddTask, editingTask, onUpdateTask, onCancelEdit
       setTitle(editingTask.title);
       setDescription(editingTask.description || '');
       setPriority(editingTask.priority);
+      setDueDate(editingTask.dueDate || ''); // Подтягиваем дату
     }
   }, [editingTask]);
 
@@ -43,10 +46,12 @@ export function AddTaskForm({ onAddTask, editingTask, onUpdateTask, onCancelEdit
     setTitle('');
     setDescription('');
     setPriority('medium');
+    setDueDate('');
     setOpen(false);
     if (editingTask) onCancelEdit?.();
   };
 
+  // ВОЗВРАЩЕННАЯ ОРИГИНАЛЬНАЯ ЛОГИКА МИКРОФОНА
   const handleVoiceInput = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -76,18 +81,17 @@ export function AddTaskForm({ onAddTask, editingTask, onUpdateTask, onCancelEdit
         console.log("Ответ от ИИ:", aiResult);
 
         if (aiResult && typeof aiResult === 'object') {
-          // Распределяем данные, если они есть, иначе оставляем старые или пустые
           if (aiResult.title) setTitle(aiResult.title);
           if (aiResult.description) setDescription(aiResult.description);
           if (aiResult.priority) setPriority(aiResult.priority as any);
           
-          // Если ИИ прислал только заголовок, а описание пустое, 
-          // можно положить весь текст транскрипта в описание для подстраховки
+          // Сохраняем дату, если ИИ её нашел
+          if (aiResult.dueDate) setDueDate(aiResult.dueDate); 
+          
           if (!aiResult.description && transcript !== aiResult.title) {
             setDescription(transcript);
           }
         } else {
-          // Если ИИ не вернул объект, просто пишем текст в заголовок
           setTitle(transcript);
         }
       } catch (err) {
@@ -110,7 +114,8 @@ export function AddTaskForm({ onAddTask, editingTask, onUpdateTask, onCancelEdit
     const taskData = {
       title: title.trim(),
       description: description.trim() || undefined,
-      priority
+      priority,
+      dueDate: dueDate || undefined // Отправляем дату в базу
     };
 
     if (editingTask && onUpdateTask) {
@@ -132,10 +137,10 @@ export function AddTaskForm({ onAddTask, editingTask, onUpdateTask, onCancelEdit
       )}
       
       <DialogContent 
-  className="sm:max-w-[425px] mx-4"
-  onOpenAutoFocus={(e) => e.preventDefault()} // Отключаем фокус при открытии
-  onCloseAutoFocus={(e) => e.preventDefault()} // Отключаем фокус при закрытии
-  >
+        className="sm:max-w-[425px] mx-4"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle>{editingTask ? 'Изменить задачу' : 'Новая задача'}</DialogTitle>
@@ -174,18 +179,31 @@ export function AddTaskForm({ onAddTask, editingTask, onUpdateTask, onCancelEdit
             disabled={isProcessing}
           />
           
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground uppercase font-bold">Приоритет</label>
-            <select 
-              className="w-full p-2 rounded-md border border-input bg-background text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as any)}
-              disabled={isProcessing}
-            >
-              <option value="low">Низкий (Low)</option>
-              <option value="medium">Средний (Medium)</option>
-              <option value="high">Высокий (High)</option>
-            </select>
+          {/* Блок со сроком и приоритетом */}
+          <div className="flex gap-3">
+            <div className="space-y-1 flex-1">
+              <label className="text-xs text-muted-foreground uppercase font-bold">Срок (Дедлайн)</label>
+              <Input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                disabled={isProcessing}
+              />
+            </div>
+
+            <div className="space-y-1 flex-1">
+              <label className="text-xs text-muted-foreground uppercase font-bold">Приоритет</label>
+              <select 
+                className="w-full p-2 h-10 rounded-md border border-input bg-background text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as any)}
+                disabled={isProcessing}
+              >
+                <option value="low">Низкий (Low)</option>
+                <option value="medium">Средний (Medium)</option>
+                <option value="high">Высокий (High)</option>
+              </select>
+            </div>
           </div>
           
           <div className="flex gap-2 pt-2">
