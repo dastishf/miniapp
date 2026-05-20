@@ -141,7 +141,7 @@ export default function App() {
     };
 
     try {
-      alert(`Отправка в Google... Дата: ${dueDate}`); // ТЕСТОВЫЙ АЛЕРТ 1
+      alert(`Отправка в Google... Дата дедлайна: ${dueDate}`);
 
       const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
         method: 'POST',
@@ -167,33 +167,7 @@ export default function App() {
     }
   };
 
-    try {
-      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(event),
-      });
-
-      if (response.status === 401) {
-        console.warn("Срок действия токена Google истек.");
-        setGoogleToken(null);
-        localStorage.removeItem("google_access_token");
-      } else if (response.ok) {
-        console.log("🚀 Задача успешно улетела в Google Календарь!");
-      }
-    } catch (error) {
-      console.error("Ошибка интеграции с Google Календарем:", error);
-    }
-  };
-
   // ---------- INITIAL LOAD ----------
-  useEffect(() => {
-    console.log("currentTeam:", currentTeam);
-  }, [currentTeam]);
-
   useEffect(() => {
     // ПРИНУДИТЕЛЬНАЯ ФОНОВАЯ ЗАГРУЗКА GOOGLE API ПРИ СТАРТЕ
     if (!window.google || !window.google.accounts) {
@@ -203,6 +177,7 @@ export default function App() {
       script.defer = true;
       document.head.appendChild(script);
     }
+
     const savedTeam = localStorage.getItem("currentTeam");
     if (savedTeam) {
       try {
@@ -417,19 +392,6 @@ export default function App() {
     }
   };
 
-  const handleDeletePermanent = async (id: string) => {
-    if (currentTeam) {
-      try {
-        await fbDeleteTask(id);
-      } catch (e) {
-        console.error("Error deleting task in Firebase:", e);
-      }
-    } else {
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-      setArchivedTasks((prev) => prev.filter((t) => t.id !== id));
-    }
-  };
-
   const handleLogout = () => {
     localStorage.removeItem("currentTeam");
     setCurrentTeam(null);
@@ -501,13 +463,12 @@ export default function App() {
           <h1 className="text-xl font-bold">Менеджер Задач</h1>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            {/* КНОПКА ИНТЕГРАЦИИ GOOGLE С ПОДДЕРЖКОЙ MOBILE / DESKTOP */}
             <Button 
               variant={googleToken ? "secondary" : "outline"} 
               onClick={handleConnectGoogle}
               className={googleToken ? "text-green-600 border-green-200 dark:text-green-400 dark:border-green-900" : ""}
             >
-              {googleToken ? "📅 Подключен" : "📅 Google"}
+              {googleToken ? "📅 Подключен" : "📅 Календарь"}
             </Button>
             <Button variant="ghost" onClick={handleLogout}>
               Выйти
