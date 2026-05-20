@@ -141,6 +141,33 @@ export default function App() {
     };
 
     try {
+      alert(`Отправка в Google... Дата: ${dueDate}`); // ТЕСТОВЫЙ АЛЕРТ 1
+
+      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(event),
+      });
+
+      if (response.status === 401) {
+        alert("Google отклонил токен (401 Unauthorized). Сбрасываем сессию.");
+        setGoogleToken(null);
+        localStorage.removeItem("google_access_token");
+      } else if (response.ok) {
+        alert("🚀 УСПЕХ! Google Календарь принял задачу!");
+      } else {
+        const errData = await response.json();
+        alert(`Гугол вернул ошибку ${response.status}: ${JSON.stringify(errData)}`);
+      }
+    } catch (error: any) {
+      alert(`Ошибка сети при запросе к Google: ${error?.message || error}`);
+    }
+  };
+
+    try {
       const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
         method: 'POST',
         headers: {
