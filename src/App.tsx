@@ -75,6 +75,8 @@ const addToGoogleCalendar = async (title: string, description: string, dueDate: 
   };
 
   try {
+    alert(`ОТПРАВКА ОБЫЧНОЙ ЗАДАЧИ! Дата: ${dueDate}`);
+
     const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
       method: 'POST',
       headers: {
@@ -87,11 +89,10 @@ const addToGoogleCalendar = async (title: string, description: string, dueDate: 
     if (response.status === 401) {
       alert("Ошибка: Google отклонил токен (401). Переподключите календарь.");
     } else if (response.ok) {
-      // Тихий успех для обычных задач
-      console.log("Задача успешно отправлена в Google Календарь");
+      alert("🎉 УРА! Google Календарь успешно принял обычную задачу из формы!");
     } else {
       const errData = await response.json();
-      alert(`Ошибка от Google ${response.status}: ${JSON.stringify(errData)}`);
+      alert(`Ошибка формата от Google ${response.status}: ${JSON.stringify(errData)}`);
     }
   } catch (error: any) {
     alert(`Ошибка сети к Google: ${error?.message || error}`);
@@ -158,7 +159,7 @@ export default function App() {
     client.requestAccessToken();
   };
 
-  // ---------- ПРЯМОЙ ТЕСТ API GOOGLE ----------
+  // ПРЯМОЙ ТЕСТ API GOOGLE
   const testDirectGoogleAPI = async () => {
     const token = localStorage.getItem("google_access_token");
     if (!token) {
@@ -258,6 +259,11 @@ export default function App() {
   }, [archivedTasks, currentTeam]);
 
   const addTask = async (taskData: Omit<Task, "id" | "completed" | "createdAt"> & { dueDate?: string | null }) => {
+    const savedToken = localStorage.getItem("google_access_token");
+    
+    // ВСПЛЫВАЮЩЕЕ ОКНО ДЛЯ ПРОВЕРКИ ДАННЫХ ИЗ ФОРМЫ
+    alert(`Вход в addTask!\nНазвание: "${taskData.title}"\nДедлайн из формы: "${taskData.dueDate}"\nТокен в памяти: ${savedToken ? "ЕСТЬ" : "НЕТ"}`);
+
     if (currentTeam) {
       try {
         await fbCreateTask({
@@ -281,12 +287,10 @@ export default function App() {
       setTasks((prev) => [newTask, ...prev]);
     }
 
-    const savedToken = localStorage.getItem("google_access_token");
-
     if (taskData.dueDate && savedToken) {
       await addToGoogleCalendar(taskData.title, taskData.description || '', taskData.dueDate, savedToken);
-    } else if (!taskData.dueDate) {
-      console.log("Внимание: Дедлайн не указан, отправка в календарь пропущена.");
+    } else {
+      alert(`Пропущено! Условие отправки не совпало.\nДедлайн: "${taskData.dueDate}"\nТокен: "${savedToken ? 'Да' : 'Нет'}"`);
     }
   };
 
@@ -408,7 +412,6 @@ export default function App() {
           <div className="flex items-center gap-2">
             <ThemeToggle />
             
-            {/* КРАСНАЯ КНОПКА ПРАВДЫ ДЛЯ ТЕСТА */}
             <Button variant="destructive" size="sm" onClick={testDirectGoogleAPI}>
               🧪 Тест API
             </Button>
