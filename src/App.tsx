@@ -66,6 +66,41 @@ interface Team {
 
 type AppMode = "team-selection" | "create-team" | "join-team" | "task-manager";
 
+// ---------- ГЛОБАЛЬНАЯ ФУНКЦИЯ ОТПРАВКИ В GOOGLE (ВЫНЕСЕНА НАВЕРХ) ----------
+const addToGoogleCalendar = async (title: string, description: string, dueDate: string, token: string) => {
+  const event = {
+    summary: title,
+    description: description || 'Создано через Atrium Task',
+    start: { date: dueDate },
+    end: { date: dueDate },
+  };
+
+  try {
+    alert(`ГЛОБАЛЬНЫЙ ВЫЗОВ: Отправка в Google... Дата дедлайна: ${dueDate}`);
+
+    const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(event),
+    });
+
+    if (response.status === 401) {
+      alert("Google отклонил токен (401 Unauthorized). Требуется переподключение в интерфейсе.");
+    } else if (response.ok) {
+      alert("🚀 УСПЕХ! Google Календарь принял задачу!");
+    } else {
+      const errData = await response.json();
+      alert(`Гугол вернул ошибку ${response.status}: ${JSON.stringify(errData)}`);
+    }
+  } catch (error: any) {
+    alert(`Ошибка сети при запросе к Google: ${error?.message || error}`);
+  }
+};
+
+// ---------- ОСНОВНОЙ КОМПОНЕНТ ПРИЛОЖЕНИЯ ----------
 export default function App() {
   const [mode, setMode] = useState<AppMode>("team-selection");
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
@@ -95,7 +130,7 @@ export default function App() {
     }
   }, []);
 
-  // ---------- ЛОГИКА GOOGLE CALENDAR ----------
+  // ---------- ЛОГИКА GOOGLE CALENDAR AUTHORIZATION ----------
   const handleConnectGoogle = () => {
     if (!window.google || !window.google.accounts) {
       alert("Интерфейс Google еще загружается, подождите пару секунд и повторите попытку.");
@@ -130,41 +165,6 @@ export default function App() {
       },
     });
     client.requestAccessToken();
-  };
-
-  const addToGoogleCalendar = async (title: string, description: string, dueDate: string, token: string) => {
-    const event = {
-      summary: title,
-      description: description || 'Создано через Atrium Task',
-      start: { date: dueDate },
-      end: { date: dueDate },
-    };
-
-    try {
-      alert(`Отправка в Google... Дата дедлайна: ${dueDate}`);
-
-      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(event),
-      });
-
-      if (response.status === 401) {
-        alert("Google отклонил токен (401 Unauthorized). Сбрасываем сессию.");
-        setGoogleToken(null);
-        localStorage.removeItem("google_access_token");
-      } else if (response.ok) {
-        alert("🚀 УСПЕХ! Google Календарь принял задачу!");
-      } else {
-        const errData = await response.json();
-        alert(`Гугол вернул ошибку ${response.status}: ${JSON.stringify(errData)}`);
-      }
-    } catch (error: any) {
-      alert(`Ошибка сети при запросе к Google: ${error?.message || error}`);
-    }
   };
 
   // ---------- INITIAL LOAD ----------
@@ -244,7 +244,7 @@ export default function App() {
     };
   }, [currentTeam]);
 
-  // ---------- LOCAL STORAGE SYNCS (only when NOT in team) ----------
+  // ---------- LOCAL STORAGE SYNCS ----------
   useEffect(() => {
     if (currentTeam) return;
     localStorage.setItem("tasks", JSON.stringify(tasks));
@@ -257,7 +257,7 @@ export default function App() {
 
   // ---------- TASK ACTIONS ----------
   const addTask = async (taskData: Omit<Task, "id" | "completed" | "createdAt"> & { dueDate?: string | null }) => {
-    // ВЫВОДИМ ВСЁ НА ЭКРАН ПРИНУДИТЕЛЬНО ДЛЯ ТЕСТА
+    // ВЫВОДИМ ВСЁ НА ЭКРАН ПРИНУДИТЕЛЬНО ДЛЯ ТЕСТА СТРУКТУРЫ ВХОДА
     alert(`Клик по кнопке! Токен есть: ${!!googleToken}. Дедлайн пришел: "${taskData.dueDate}"`);
 
     if (currentTeam) {
