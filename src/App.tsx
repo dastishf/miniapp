@@ -65,7 +65,7 @@ interface Team {
 
 type AppMode = "team-selection" | "create-team" | "join-team" | "task-manager";
 
-// Глобальная функция интеграции
+// ---------- ГЛОБАЛЬНАЯ ИНТЕГРАЦИЯ GOOGLE ----------
 const addToGoogleCalendar = async (title: string, description: string, dueDate: string, token: string) => {
   const event = {
     summary: title,
@@ -75,8 +75,6 @@ const addToGoogleCalendar = async (title: string, description: string, dueDate: 
   };
 
   try {
-    alert(`ОТПРАВКА ОБЫЧНОЙ ЗАДАЧИ! Дата: ${dueDate}`);
-
     const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
       method: 'POST',
       headers: {
@@ -89,13 +87,13 @@ const addToGoogleCalendar = async (title: string, description: string, dueDate: 
     if (response.status === 401) {
       alert("Ошибка: Google отклонил токен (401). Переподключите календарь.");
     } else if (response.ok) {
-      alert("🎉 УРА! Google Календарь успешно принял обычную задачу из формы!");
+      console.log("Успех: Задача отправлена в Google Календарь!");
     } else {
       const errData = await response.json();
-      alert(`Ошибка формата от Google ${response.status}: ${JSON.stringify(errData)}`);
+      console.error(`Ошибка формата от Google ${response.status}:`, errData);
     }
   } catch (error: any) {
-    alert(`Ошибка сети к Google: ${error?.message || error}`);
+    console.error(`Ошибка сети к Google:`, error);
   }
 };
 
@@ -112,6 +110,7 @@ export default function App() {
 
   const [googleToken, setGoogleToken] = useState<string | null>(() => localStorage.getItem("google_access_token"));
 
+  // Подхват токена после мобильной авторизации (Telegram)
   useEffect(() => {
     const hash = window.location.hash;
     if (hash) {
@@ -159,44 +158,7 @@ export default function App() {
     client.requestAccessToken();
   };
 
-  // ПРЯМОЙ ТЕСТ API GOOGLE
-  const testDirectGoogleAPI = async () => {
-    const token = localStorage.getItem("google_access_token");
-    if (!token) {
-      alert("Токена нет! Сначала нажми 'Календарь' и авторизуйся.");
-      return;
-    }
-
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dateStr = tomorrow.toISOString().split('T')[0];
-
-    try {
-      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          summary: "🔥 ТЕСТ ИЗ VERCEL",
-          description: "Если ты это видишь, API Гугла работает идеально!",
-          start: { date: dateStr },
-          end: { date: dateStr },
-        }),
-      });
-
-      if (response.ok) {
-        alert("✅ УСПЕХ! Прямой запрос прошел. Ищи '🔥 ТЕСТ ИЗ VERCEL' в календаре на завтра.");
-      } else {
-        const err = await response.json();
-        alert(`❌ ОШИБКА ОТ GOOGLE: ${response.status}\n${JSON.stringify(err)}`);
-      }
-    } catch (e: any) {
-      alert(`❌ ОШИБКА СЕТИ: ${e.message}`);
-    }
-  };
-
+  // Инициализация скриптов и локальных данных
   useEffect(() => {
     if (!window.google || !window.google.accounts) {
       const script = document.createElement('script');
@@ -232,6 +194,7 @@ export default function App() {
     }
   }, []);
 
+  // Подписка на Firebase
   useEffect(() => {
     if (!currentTeam) return;
 
@@ -248,6 +211,7 @@ export default function App() {
     };
   }, [currentTeam]);
 
+  // Локальное сохранение (если не в команде)
   useEffect(() => {
     if (currentTeam) return;
     localStorage.setItem("tasks", JSON.stringify(tasks));
@@ -258,14 +222,21 @@ export default function App() {
     localStorage.setItem("archivedTasks", JSON.stringify(archivedTasks));
   }, [archivedTasks, currentTeam]);
 
+  // ---------- ПАРАЛЛЕЛЬНОЕ ДОБАВЛЕНИЕ ЗАДАЧИ ----------
   const addTask = async (taskData: Omit<Task, "id" | "completed" | "createdAt"> & { dueDate?: string | null }) => {
     const savedToken = localStorage.getItem("google_access_token");
-    
-    // ВСПЛЫВАЮЩЕЕ ОКНО ДЛЯ ПРОВЕРКИ ДАННЫХ ИЗ ФОРМЫ
-    alert(`Вход в addTask!\nНазвание: "${taskData.title}"\nДедлайн из формы: "${taskData.dueDate}"\nТокен в памяти: ${savedToken ? "ЕСТЬ" : "НЕТ"}`);
 
-    if (currentTeam) {
-      try {
+    // Задача 1: Отправка в Google (Асинхронная)
+    const googleAction = async () => {
+      if (taskData.dueDate && savedToken) {
+        const cleanDate = taskData.dueDate.split('T')[0].trim();
+        await addToGoogleCalendar(taskData.title, taskData.description || '', cleanDate, savedToken);
+      }
+    };
+
+    // Задача 2: Отправка в Firebase или локальный стейт (Асинхронная)
+    const firebaseAction = async () => {
+      if (currentTeam) {
         await fbCreateTask({
           ...taskData,
           completed: false,
@@ -273,24 +244,24 @@ export default function App() {
           teamId: currentTeam.id,
           createdAt: Date.now(),
         });
-      } catch (e) {
-        console.error("Error creating task in Firebase:", e);
+      } else {
+        const newTask: Task = {
+          id: crypto.randomUUID(),
+          completed: false,
+          createdAt: new Date(),
+          archived: false,
+          ...taskData,
+        };
+        setTasks((prev) => [newTask, ...prev]);
       }
-    } else {
-      const newTask: Task = {
-        id: crypto.randomUUID(),
-        completed: false,
-        createdAt: new Date(),
-        archived: false,
-        ...taskData,
-      };
-      setTasks((prev) => [newTask, ...prev]);
-    }
+    };
 
-    if (taskData.dueDate && savedToken) {
-      await addToGoogleCalendar(taskData.title, taskData.description || '', taskData.dueDate, savedToken);
-    } else {
-      alert(`Пропущено! Условие отправки не совпало.\nДедлайн: "${taskData.dueDate}"\nТокен: "${savedToken ? 'Да' : 'Нет'}"`);
+    // ЗАПУСК ОБОИХ ПРОЦЕССОВ ПАРАЛЛЕЛЬНО
+    // Promise.allSettled гарантирует, что даже если Firebase упадет, Google отработает (и наоборот)
+    try {
+      await Promise.allSettled([googleAction(), firebaseAction()]);
+    } catch (e) {
+      console.error("Критическая ошибка при добавлении задачи:", e);
     }
   };
 
@@ -412,10 +383,6 @@ export default function App() {
           <div className="flex items-center gap-2">
             <ThemeToggle />
             
-            <Button variant="destructive" size="sm" onClick={testDirectGoogleAPI}>
-              🧪 Тест API
-            </Button>
-
             <Button variant={googleToken ? "secondary" : "outline"} size="sm" onClick={handleConnectGoogle} className={googleToken ? "text-green-600 border-green-200" : ""}>
               {googleToken ? "📅 Подключен" : "📅 Календарь"}
             </Button>
@@ -446,6 +413,8 @@ export default function App() {
                 <TaskItem key={task.id} task={task} onToggleComplete={toggleTaskComplete} onDelete={archiveTask} onEdit={setEditingTask} />
               ))}
             </div>
+            
+            {/* Форма задач (микрофон и Gemini работают внутри неё) */}
             <AddTaskForm onAddTask={addTask} editingTask={editingTask} onUpdateTask={handleUpdateTask} onCancelEdit={() => setEditingTask(null)} />
           </TabsContent>
 
