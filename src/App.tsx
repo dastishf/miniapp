@@ -21,7 +21,6 @@ import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Trash2, Settings } from "lucide-react";
 
-// Расширяем глобальное окно для работы с Google API и Telegram WebApp
 declare global {
   interface Window {
     google: any;
@@ -66,7 +65,7 @@ interface Team {
 
 type AppMode = "team-selection" | "create-team" | "join-team" | "task-manager";
 
-// ---------- ГЛОБАЛЬНАЯ ФУНКЦИЯ ОТПРАВКИ В GOOGLE (ВЫНЕСЕНА НАВЕРХ) ----------
+// Глобальная функция интеграции
 const addToGoogleCalendar = async (title: string, description: string, dueDate: string, token: string) => {
   const event = {
     summary: title,
@@ -76,7 +75,7 @@ const addToGoogleCalendar = async (title: string, description: string, dueDate: 
   };
 
   try {
-    alert(`ГЛОБАЛЬНЫЙ ВЫЗОВ: Отправка в Google... Дата дедлайна: ${dueDate}`);
+    alert(`ОТПРАВКА В GOOGLE! Дата: ${dueDate}`);
 
     const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
       method: 'POST',
@@ -88,19 +87,18 @@ const addToGoogleCalendar = async (title: string, description: string, dueDate: 
     });
 
     if (response.status === 401) {
-      alert("Google отклонил токен (401 Unauthorized). Требуется переподключение в интерфейсе.");
+      alert("Ошибка: Google отклонил токен (401). Переподключите календарь.");
     } else if (response.ok) {
       alert("🚀 УСПЕХ! Google Календарь принял задачу!");
     } else {
       const errData = await response.json();
-      alert(`Гугол вернул ошибку ${response.status}: ${JSON.stringify(errData)}`);
+      alert(`Ошибка от Google ${response.status}: ${JSON.stringify(errData)}`);
     }
   } catch (error: any) {
-    alert(`Ошибка сети при запросе к Google: ${error?.message || error}`);
+    alert(`Ошибка сети к Google: ${error?.message || error}`);
   }
 };
 
-// ---------- ОСНОВНОЙ КОМПОНЕНТ ПРИЛОЖЕНИЯ ----------
 export default function App() {
   const [mode, setMode] = useState<AppMode>("team-selection");
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
@@ -112,10 +110,8 @@ export default function App() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [activeTab, setActiveTab] = useState<"tasks" | "archive" | "management">("tasks");
 
-  // Стейт для хранения токена Google авторизации
   const [googleToken, setGoogleToken] = useState<string | null>(() => localStorage.getItem("google_access_token"));
 
-  // ---------- ЛОГИКА ПОДХВАТА ТОКЕНА ИЗ URL (ДЛЯ МОБИЛОК) ----------
   useEffect(() => {
     const hash = window.location.hash;
     if (hash) {
@@ -124,35 +120,31 @@ export default function App() {
       if (accessToken) {
         setGoogleToken(accessToken);
         localStorage.setItem("google_access_token", accessToken);
-        window.location.hash = ""; // Чистим строку адреса
+        window.location.hash = "";
         alert("Google Календарь успешно подключен!");
       }
     }
   }, []);
 
-  // ---------- ЛОГИКА GOOGLE CALENDAR AUTHORIZATION ----------
   const handleConnectGoogle = () => {
     if (!window.google || !window.google.accounts) {
-      alert("Интерфейс Google еще загружается, подождите пару секунд и повторите попытку.");
+      alert("Google API еще загружается...");
       return;
     }
 
-    // Проверяем мобильный Телеграм
-    const isTelegramMobile = window.Telegram?.WebApp && 
+    const isTelegramMobile = window.Telegram?.WebApp &&
       (window.Telegram.WebApp.platform === 'android' || window.Telegram.WebApp.platform === 'ios');
 
     if (isTelegramMobile) {
       const redirectUri = "https://miniapp-fawn-omega.vercel.app";
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
       const scope = encodeURIComponent('https://www.googleapis.com/auth/calendar.events');
-      
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}`;
-      
+
       window.Telegram.WebApp.openLink(authUrl);
       return;
     }
 
-    // Для ПК / Десктопа
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
       scope: 'https://www.googleapis.com/auth/calendar.events',
@@ -167,9 +159,7 @@ export default function App() {
     client.requestAccessToken();
   };
 
-  // ---------- INITIAL LOAD ----------
   useEffect(() => {
-    // ПРИНУДИТЕЛЬНАЯ ФОНОВАЯ ЗАГРУЗКА GOOGLE API ПРИ СТАРТЕ
     if (!window.google || !window.google.accounts) {
       const script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
@@ -181,70 +171,45 @@ export default function App() {
     const savedTeam = localStorage.getItem("currentTeam");
     if (savedTeam) {
       try {
-        const parsedTeam = JSON.parse(savedTeam);
-        setCurrentTeam(parsedTeam);
+        setCurrentTeam(JSON.parse(savedTeam));
         setMode("task-manager");
         return;
       } catch (e) {
-        console.error("Error parsing saved team:", e);
+        console.error("Error parsing team:", e);
       }
     }
 
     const savedTasks = localStorage.getItem("tasks");
     if (savedTasks) {
       try {
-        setTasks(
-          JSON.parse(savedTasks).map((t: any) => ({
-            ...t,
-            createdAt: new Date(t.createdAt),
-          }))
-        );
-      } catch (e) {
-        console.error("Error loading local tasks:", e);
-      }
+        setTasks(JSON.parse(savedTasks).map((t: any) => ({ ...t, createdAt: new Date(t.createdAt) })));
+      } catch (e) {}
     }
 
     const savedArchive = localStorage.getItem("archivedTasks");
     if (savedArchive) {
       try {
-        setArchivedTasks(
-          JSON.parse(savedArchive).map((t: any) => ({
-            ...t,
-            createdAt: new Date(t.createdAt),
-          }))
-        );
-      } catch (e) {
-        console.error("Error loading local archive:", e);
-      }
+        setArchivedTasks(JSON.parse(savedArchive).map((t: any) => ({ ...t, createdAt: new Date(t.createdAt) })));
+      } catch (e) {}
     }
   }, []);
 
-  // ---------- FIREBASE SUBSCRIPTION WHEN TEAM SELECTED ----------
   useEffect(() => {
     if (!currentTeam) return;
 
     const unsubscribe = subscribeToTasks(currentTeam.id, (firebaseTasks) => {
-      const active = firebaseTasks
-        .filter((t) => !t.archived)
-        .map((t) => ({ ...t, createdAt: new Date(t.createdAt) }));
-      const archived = firebaseTasks
-        .filter((t) => t.archived)
-        .map((t) => ({ ...t, createdAt: new Date(t.createdAt) }));
+      const active = firebaseTasks.filter((t) => !t.archived).map((t) => ({ ...t, createdAt: new Date(t.createdAt) }));
+      const archived = firebaseTasks.filter((t) => t.archived).map((t) => ({ ...t, createdAt: new Date(t.createdAt) }));
 
       setTasks(active);
       setArchivedTasks(archived);
     });
 
     return () => {
-      try {
-        unsubscribe();
-      } catch (e) {
-        // ignore
-      }
+      try { unsubscribe(); } catch (e) {}
     };
   }, [currentTeam]);
 
-  // ---------- LOCAL STORAGE SYNCS ----------
   useEffect(() => {
     if (currentTeam) return;
     localStorage.setItem("tasks", JSON.stringify(tasks));
@@ -255,11 +220,7 @@ export default function App() {
     localStorage.setItem("archivedTasks", JSON.stringify(archivedTasks));
   }, [archivedTasks, currentTeam]);
 
-  // ---------- TASK ACTIONS ----------
   const addTask = async (taskData: Omit<Task, "id" | "completed" | "createdAt"> & { dueDate?: string | null }) => {
-    // ВЫВОДИМ ВСЁ НА ЭКРАН ПРИНУДИТЕЛЬНО ДЛЯ ТЕСТА СТРУКТУРЫ ВХОДА
-    alert(`Клик по кнопке! Токен есть: ${!!googleToken}. Дедлайн пришел: "${taskData.dueDate}"`);
-
     if (currentTeam) {
       try {
         await fbCreateTask({
@@ -283,17 +244,14 @@ export default function App() {
       setTasks((prev) => [newTask, ...prev]);
     }
 
-    // БЕРЕМ ТОКЕН НАПРЯМУЮ ИЗ ПАМЯТИ, ОБХОДЯ СТЕЙТ REACT
+    // Чтение токена напрямую из памяти устройства
     const savedToken = localStorage.getItem("google_access_token");
-
-    alert(`Проверка перед отправкой: Дедлайн="${taskData.dueDate}", Токен из памяти="${savedToken ? 'ЕСТЬ' : 'ПУСТО'}"`);
 
     if (taskData.dueDate && savedToken) {
       await addToGoogleCalendar(taskData.title, taskData.description || '', taskData.dueDate, savedToken);
-    } else {
-      alert(`Отмена отправки в Google! Условие не выполнено. Дедлайн: ${!!taskData.dueDate}, Токен: ${!!savedToken}`);
+    } else if (taskData.dueDate && !savedToken) {
+      alert("Внимание: Календарь не подключен. Задача сохранена только в приложении.");
     }
-  };
   };
 
   const toggleTaskComplete = async (id: string) => {
@@ -301,11 +259,7 @@ export default function App() {
     if (!t) return;
 
     if (currentTeam) {
-      try {
-        await fbUpdateTask(id, { completed: !t.completed });
-      } catch (e) {
-        console.error("Error toggling complete in Firebase:", e);
-      }
+      try { await fbUpdateTask(id, { completed: !t.completed }); } catch (e) {}
     } else {
       setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, completed: !task.completed } : task)));
     }
@@ -316,11 +270,7 @@ export default function App() {
     if (!t) return;
 
     if (currentTeam) {
-      try {
-        await fbUpdateTask(id, { archived: true });
-      } catch (e) {
-        console.error("Error archiving task in Firebase:", e);
-      }
+      try { await fbUpdateTask(id, { archived: true }); } catch (e) {}
     } else {
       setTasks((prev) => prev.filter((x) => x.id !== id));
       setArchivedTasks((prev) => [{ ...t, archived: true }, ...prev]);
@@ -332,11 +282,7 @@ export default function App() {
     if (!t) return;
 
     if (currentTeam) {
-      try {
-        await fbUpdateTask(id, { archived: false });
-      } catch (e) {
-        console.error("Error restoring task in Firebase:", e);
-      }
+      try { await fbUpdateTask(id, { archived: false }); } catch (e) {}
     } else {
       setArchivedTasks((prev) => prev.filter((x) => x.id !== id));
       setTasks((prev) => [{ ...t, archived: false }, ...prev]);
@@ -345,11 +291,7 @@ export default function App() {
 
   const deleteArchivedPermanently = async (id: string) => {
     if (currentTeam) {
-      try {
-        await fbDeleteTask(id);
-      } catch (e) {
-        console.error("Error deleting task in Firebase:", e);
-      }
+      try { await fbDeleteTask(id); } catch (e) {}
     } else {
       setArchivedTasks((prev) => prev.filter((x) => x.id !== id));
     }
@@ -359,11 +301,7 @@ export default function App() {
     if (currentTeam) {
       const toArchive = tasks.filter((t) => t.completed);
       for (const t of toArchive) {
-        try {
-          await fbUpdateTask(t.id, { archived: true });
-        } catch (e) {
-          console.error("Error archiving completed task in Firebase:", e);
-        }
+        try { await fbUpdateTask(t.id, { archived: true }); } catch (e) {}
       }
     } else {
       setTasks((prev) => prev.filter((task) => !task.completed));
@@ -373,11 +311,7 @@ export default function App() {
   const clearArchive = async () => {
     if (currentTeam) {
       for (const t of archivedTasks) {
-        try {
-          await fbDeleteTask(t.id);
-        } catch (e) {
-          console.error("Error deleting archived task from Firebase:", e);
-        }
+        try { await fbDeleteTask(t.id); } catch (e) {}
       }
     } else {
       setArchivedTasks([]);
@@ -393,9 +327,7 @@ export default function App() {
           priority: updatedTask.priority,
           dueDate: updatedTask.dueDate,
         });
-      } catch (e) {
-        console.error("Error updating task in Firebase:", e);
-      }
+      } catch (e) {}
     } else {
       setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
       setEditingTask(null);
@@ -408,7 +340,6 @@ export default function App() {
     setMode("team-selection");
   };
 
-  // ---------- Filtering ----------
   const filteredTasks = tasks.filter((task) => {
     if (filter === "active") return !task.completed;
     if (filter === "completed") return task.completed;
@@ -421,51 +352,18 @@ export default function App() {
     completed: tasks.filter((t) => t.completed).length,
   };
 
-  // ---------- UI MODES ----------
   if (mode === "team-selection") {
-    return (
-      <TeamSelection
-        onCreateTeam={() => setMode("create-team")}
-        onJoinTeam={() => setMode("join-team")}
-      />
-    );
+    return <TeamSelection onCreateTeam={() => setMode("create-team")} onJoinTeam={() => setMode("join-team")} />;
   }
 
   if (mode === "create-team") {
-    return (
-      <CreateTeamForm
-        onBack={() => setMode("team-selection")}
-        onTeamCreated={(team) => {
-          setCurrentTeam(team);
-          localStorage.setItem("currentTeam", JSON.stringify(team));
-          setMode("task-manager");
-        }}
-      />
-    );
+    return <CreateTeamForm onBack={() => setMode("team-selection")} onTeamCreated={(team) => { setCurrentTeam(team); localStorage.setItem("currentTeam", JSON.stringify(team)); setMode("task-manager"); }} />;
   }
 
   if (mode === "join-team") {
-    return (
-      <JoinTeamForm
-        onBack={() => setMode("team-selection")}
-        onJoinSuccess={(teamData) => {
-          if (teamData && typeof teamData === 'object' && 'id' in teamData) {
-            setCurrentTeam(teamData);
-            localStorage.setItem("currentTeam", JSON.stringify(teamData));
-            setMode("task-manager");
-          } else {
-            const saved = localStorage.getItem("currentTeam");
-            if (saved) {
-              setCurrentTeam(JSON.parse(saved));
-              setMode("task-manager");
-            }
-          }
-        }}
-      />
-    );
+    return <JoinTeamForm onBack={() => setMode("team-selection")} onJoinSuccess={(teamData) => { if (teamData && typeof teamData === 'object' && 'id' in teamData) { setCurrentTeam(teamData); localStorage.setItem("currentTeam", JSON.stringify(teamData)); setMode("task-manager"); } else { const saved = localStorage.getItem("currentTeam"); if (saved) { setCurrentTeam(JSON.parse(saved)); setMode("task-manager"); } } }} />;
   }
 
-  // ---------- RENDER ----------
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-md mx-auto px-4 py-6">
@@ -473,112 +371,64 @@ export default function App() {
           <h1 className="text-xl font-bold">Менеджер Задач</h1>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button 
-              variant={googleToken ? "secondary" : "outline"} 
-              onClick={handleConnectGoogle}
-              className={googleToken ? "text-green-600 border-green-200 dark:text-green-400 dark:border-green-900" : ""}
-            >
+            <Button variant={googleToken ? "secondary" : "outline"} onClick={handleConnectGoogle} className={googleToken ? "text-green-600 border-green-200 dark:text-green-400 dark:border-green-900" : ""}>
               {googleToken ? "📅 Подключен" : "📅 Календарь"}
             </Button>
-            <Button variant="ghost" onClick={handleLogout}>
-              Выйти
-            </Button>
+            <Button variant="ghost" onClick={handleLogout}>Выйти</Button>
           </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
           <TabsList className="grid grid-cols-3 w-full">
             <TabsTrigger value="tasks">Задачи</TabsTrigger>
-
             <TabsTrigger value="management" className="relative">
-              <Settings className="h-4 w-4 mr-1" />
-              Управление
-              <NotificationBadge
-                teamCode={currentTeam?.code}
-                className="absolute -top-1 -right-1 h-5 w-5 p-0 text-xs flex items-center justify-center"
-              />
+              <Settings className="h-4 w-4 mr-1" /> Управление
+              <NotificationBadge teamCode={currentTeam?.code} className="absolute -top-1 -right-1 h-5 w-5 p-0 text-xs flex items-center justify-center" />
             </TabsTrigger>
-
             <TabsTrigger value="archive">Архив</TabsTrigger>
           </TabsList>
 
-          {/* TASKS */}
           <TabsContent value="tasks" className="mt-6 space-y-6">
             <TaskStats tasks={tasks} />
-
-            <TaskFilter
-              currentFilter={filter}
-              onFilterChange={setFilter}
-              taskCounts={taskCounts}
-            />
-
+            <TaskFilter currentFilter={filter} onFilterChange={setFilter} taskCounts={taskCounts} />
             {taskCounts.completed > 0 && (
               <Button variant="outline" size="sm" onClick={clearCompleted} className="w-full">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Очистить выполненные
+                <Trash2 className="h-4 w-4 mr-2" /> Очистить выполненные
               </Button>
             )}
-
             <div className="space-y-3 pb-24">
               {filteredTasks.map((task) => (
-                <TaskItem
-                  key={task.id}
-                  task={task}
-                  onToggleComplete={toggleTaskComplete}
-                  onDelete={archiveTask}
-                  onEdit={setEditingTask}
-                />
+                <TaskItem key={task.id} task={task} onToggleComplete={toggleTaskComplete} onDelete={archiveTask} onEdit={setEditingTask} />
               ))}
             </div>
-
-            <AddTaskForm
-              onAddTask={addTask}
-              editingTask={editingTask}
-              onUpdateTask={handleUpdateTask}
-              onCancelEdit={() => setEditingTask(null)}
-            />
+            <AddTaskForm onAddTask={addTask} editingTask={editingTask} onUpdateTask={handleUpdateTask} onCancelEdit={() => setEditingTask(null)} />
           </TabsContent>
 
-          {/* ARCHIVE */}
           <TabsContent value="archive" className="mt-6 space-y-6">
             <h2 className="text-lg font-semibold">Архив задач</h2>
-
             {archivedTasks.length === 0 ? (
               <p className="text-muted-foreground text-center py-6">Архив пуст</p>
             ) : (
               <div className="space-y-3">
                 {archivedTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="border rounded-lg p-4 bg-muted flex justify-between items-center"
-                  >
+                  <div key={task.id} className="border rounded-lg p-4 bg-muted flex justify-between items-center">
                     <div>
                       <p className="font-medium">{task.title}</p>
                       {task.description && <p className="text-sm text-muted-foreground">{task.description}</p>}
                     </div>
-
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => restoreTask(task.id)}>
-                        Восстановить
-                      </Button>
-
-                      <Button variant="destructive" size="sm" onClick={() => deleteArchivedPermanently(task.id)}>
-                        Удалить
-                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => restoreTask(task.id)}>Восстановить</Button>
+                      <Button variant="destructive" size="sm" onClick={() => deleteArchivedPermanently(task.id)}>Удалить</Button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-
             {archivedTasks.length > 0 && (
-              <Button variant="destructive" className="w-full" onClick={clearArchive}>
-                Очистить архив
-              </Button>
+              <Button variant="destructive" className="w-full" onClick={clearArchive}>Очистить архив</Button>
             )}
           </TabsContent>
 
-          {/* MANAGEMENT */}
           <TabsContent value="management" className="mt-6">
             {currentTeam && <TeamManagement teamCode={currentTeam.code} />}
             {!currentTeam && (
