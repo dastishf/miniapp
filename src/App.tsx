@@ -75,8 +75,6 @@ const addToGoogleCalendar = async (title: string, description: string, dueDate: 
   };
 
   try {
-    alert(`ОТПРАВКА В GOOGLE! Дата: ${dueDate}`);
-
     const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
       method: 'POST',
       headers: {
@@ -89,7 +87,8 @@ const addToGoogleCalendar = async (title: string, description: string, dueDate: 
     if (response.status === 401) {
       alert("Ошибка: Google отклонил токен (401). Переподключите календарь.");
     } else if (response.ok) {
-      alert("🚀 УСПЕХ! Google Календарь принял задачу!");
+      // Тихий успех для обычных задач
+      console.log("Задача успешно отправлена в Google Календарь");
     } else {
       const errData = await response.json();
       alert(`Ошибка от Google ${response.status}: ${JSON.stringify(errData)}`);
@@ -157,6 +156,44 @@ export default function App() {
       },
     });
     client.requestAccessToken();
+  };
+
+  // ---------- ПРЯМОЙ ТЕСТ API GOOGLE ----------
+  const testDirectGoogleAPI = async () => {
+    const token = localStorage.getItem("google_access_token");
+    if (!token) {
+      alert("Токена нет! Сначала нажми 'Календарь' и авторизуйся.");
+      return;
+    }
+
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dateStr = tomorrow.toISOString().split('T')[0];
+
+    try {
+      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          summary: "🔥 ТЕСТ ИЗ VERCEL",
+          description: "Если ты это видишь, API Гугла работает идеально!",
+          start: { date: dateStr },
+          end: { date: dateStr },
+        }),
+      });
+
+      if (response.ok) {
+        alert("✅ УСПЕХ! Прямой запрос прошел. Ищи '🔥 ТЕСТ ИЗ VERCEL' в календаре на завтра.");
+      } else {
+        const err = await response.json();
+        alert(`❌ ОШИБКА ОТ GOOGLE: ${response.status}\n${JSON.stringify(err)}`);
+      }
+    } catch (e: any) {
+      alert(`❌ ОШИБКА СЕТИ: ${e.message}`);
+    }
   };
 
   useEffect(() => {
@@ -244,13 +281,12 @@ export default function App() {
       setTasks((prev) => [newTask, ...prev]);
     }
 
-    // Чтение токена напрямую из памяти устройства
     const savedToken = localStorage.getItem("google_access_token");
 
     if (taskData.dueDate && savedToken) {
       await addToGoogleCalendar(taskData.title, taskData.description || '', taskData.dueDate, savedToken);
-    } else if (taskData.dueDate && !savedToken) {
-      alert("Внимание: Календарь не подключен. Задача сохранена только в приложении.");
+    } else if (!taskData.dueDate) {
+      console.log("Внимание: Дедлайн не указан, отправка в календарь пропущена.");
     }
   };
 
@@ -371,10 +407,16 @@ export default function App() {
           <h1 className="text-xl font-bold">Менеджер Задач</h1>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button variant={googleToken ? "secondary" : "outline"} onClick={handleConnectGoogle} className={googleToken ? "text-green-600 border-green-200 dark:text-green-400 dark:border-green-900" : ""}>
+            
+            {/* КРАСНАЯ КНОПКА ПРАВДЫ ДЛЯ ТЕСТА */}
+            <Button variant="destructive" size="sm" onClick={testDirectGoogleAPI}>
+              🧪 Тест API
+            </Button>
+
+            <Button variant={googleToken ? "secondary" : "outline"} size="sm" onClick={handleConnectGoogle} className={googleToken ? "text-green-600 border-green-200" : ""}>
               {googleToken ? "📅 Подключен" : "📅 Календарь"}
             </Button>
-            <Button variant="ghost" onClick={handleLogout}>Выйти</Button>
+            <Button variant="ghost" size="sm" onClick={handleLogout}>Выйти</Button>
           </div>
         </div>
 
