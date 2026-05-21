@@ -283,10 +283,17 @@ export default function App() {
       setTasks((prev) => [newTask, ...prev]);
     }
 
-    // Если у созданной задачи есть дедлайн и подключен Google — шлем событие
-    if (taskData.dueDate && googleToken) {
-      await addToGoogleCalendar(taskData.title, taskData.description || '', taskData.dueDate, googleToken);
+    // БЕРЕМ ТОКЕН НАПРЯМУЮ ИЗ ПАМЯТИ, ОБХОДЯ СТЕЙТ REACT
+    const savedToken = localStorage.getItem("google_access_token");
+
+    alert(`Проверка перед отправкой: Дедлайн="${taskData.dueDate}", Токен из памяти="${savedToken ? 'ЕСТЬ' : 'ПУСТО'}"`);
+
+    if (taskData.dueDate && savedToken) {
+      await addToGoogleCalendar(taskData.title, taskData.description || '', taskData.dueDate, savedToken);
+    } else {
+      alert(`Отмена отправки в Google! Условие не выполнено. Дедлайн: ${!!taskData.dueDate}, Токен: ${!!savedToken}`);
     }
+  };
   };
 
   const toggleTaskComplete = async (id: string) => {
